@@ -1,11 +1,16 @@
 import dotenv from "dotenv";
 import axios from "axios";
 import qs from "qs";
+import SpotifyStoringProcess from "./SpotifyStoringProcess";
+import mongooseInit from "./models";
+import TracksModel from "./models/tracks";
 
 dotenv.config();
 
 (async function _process() {
   try {
+    await mongooseInit();
+
     const TOKEN_URL = "https://accounts.spotify.com/api/token";
     const BASE_URL = "https://api.spotify.com/v1";
 
@@ -34,18 +39,26 @@ dotenv.config();
       headers: { Authorization: `Bearer ${accessToken}` },
     });
 
-    const catItems = await client.get("/browse/categories/toplists/playlists");
-    const playlistId = catItems.data.playlists.items[0].id;
+    const sa = new SpotifyStoringProcess(client);
 
-    const tracks = await client.get(
-      `/playlists/${playlistId}/tracks?${qs.stringify({
-        fields: "items(track(id, name, artists))",
-        market: "KR",
-      })}`
-    );
+    const playList = await sa.getPlaylistsItems("toplists");
+    const playListId = playList.items[0].id;
 
-    console.log(tracks.data.items);
-  } catch (err) {
-    console.error(err);
+    const tracks = await (await sa.getTracksByPlaylist(playListId)).items;
+    if (tracks.length !== 0) {
+      for (let i = 0; i < tracks.length; i++) {
+        const saveTracks = await TracksModel.create(tracks[i]);
+        const trackId = saveTracks.track.id;
+        console.log(trackId);
+
+        const features = await sa.getAudioFeatures(trackId);
+        const analysis = await sa.getAudioAnalysis(trackId);
+
+        console.log(features.id);
+        console.log(analysis.meta);
+      }
+    }
+  } catch (err: any) {
+    console.error(err.response.data);
   }
 })();
